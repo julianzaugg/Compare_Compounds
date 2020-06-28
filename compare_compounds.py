@@ -48,7 +48,7 @@ def _get_chemblIDs(compound_filename_dict):
     Read each compound file and get the ChemBL ID
     """
     compound_ids = dict()
-    for compound_name, compound_fn in compound_filename_dict.items():
+    for compound_name, compound_fn in list(compound_filename_dict.items()):
         with open(compound_fn, 'r') as fh:
             chemID = fh.readline().strip()
             compound_ids[chemID] = compound_name.lower()
@@ -63,7 +63,7 @@ def _process_raw_distances(raw_distances_filename, chembl_id_dict, sequence_assi
     chembl_id_dict = the previously constructed chembl id mapping to sequence name
     sequence_assignments_dict = the 
     """
-    chembl_id_matches_reversed = dict([(v,k) for k,v in chembl_id_dict.iteritems()])
+    chembl_id_matches_reversed = dict([(v,k) for k,v in chembl_id_dict.items()])
     # Compound1 : Compound2 : Distance
     distance_dict = defaultdict(lambda : defaultdict(float))
     with open(raw_distances_filename, 'r') as fh:
@@ -81,7 +81,7 @@ def _process_raw_distances(raw_distances_filename, chembl_id_dict, sequence_assi
                 reference_name = chembl_id_dict[reference_id]
                 distance_dict[reference_name][target_name] = distance_dict[target_name][reference_name] = float(tanimoto)
 
-    compound_names = distance_dict.keys()
+    compound_names = list(distance_dict.keys())
     result_table_strs = []
     distance_matrix = []
     for reference_name in compound_names:
@@ -89,7 +89,7 @@ def _process_raw_distances(raw_distances_filename, chembl_id_dict, sequence_assi
         for target_name in compound_names:
             distance = distance_dict[reference_name][target_name]
             row_dists.append(distance)
-            for seq_name, binding_compounds in sequence_assignments_dict.iteritems():
+            for seq_name, binding_compounds in sequence_assignments_dict.items():
                 binds_to_both = False
                 if reference_name in binding_compounds and target_name in binding_compounds:
                     binds_to_both = True
@@ -106,8 +106,10 @@ def _process_arguments(arguments):
     full_output_path = os.path.abspath(arguments.output)
     
     # Combine all structures into a single sdf file. This is done for simple calculation of distances.
-    subprocess.call("babel %s/*.sdf %s/all_input_compounds.sdf" % 
-        (full_input_path, full_output_path), shell = True)
+    # subprocess.call("babel %s/*.sdf %s/all_input_compounds.sdf" % 
+        # (full_input_path, full_output_path), shell = True)
+    subprocess.call("obabel -i sdf %s/*.sdf -o sdf -O %s/all_input_compounds.sdf" %
+    (full_input_path, full_output_path), shell = True)
 
     # Collect the chembl identifiers
     chembl_id_matches = _get_chemblIDs(compound_filenames)
@@ -115,33 +117,37 @@ def _process_arguments(arguments):
     
     # Compare each compound to every other
     subprocess.call("echo > %s/raw_distances.txt" % full_output_path, shell = True)
-    for compound_name, compound_fn in compound_filenames.iteritems():
+    for compound_name, compound_fn in compound_filenames.items():
         subprocess.call("echo NAME=%s >> %s/raw_distances.txt" % (compound_name, full_output_path), shell = True)
-        subprocess.call("babel %s %s/all_input_compounds.sdf -ofpt -xfMACCS >>  %s/raw_distances.txt" % (compound_fn, full_output_path, full_output_path), shell = True)
+        # subprocess.call("babel %s %s/all_input_compounds.sdf -ofpt -xfMACCS >>  %s/raw_distances.txt" % (compound_fn, full_output_path, full_output_path), shell = True)
+        subprocess.call("obabel -i sdf %s %s/all_input_compounds.sdf -ofpt -xfMACCS >>  %s/raw_distances.txt" % (compound_fn, full_output_path, full_output_path), shell = True)
 
     ordered_compound_names, distance_matrix, result_table_strs = _process_raw_distances("%s/raw_distances.txt" % full_output_path, chembl_id_matches, sequence_assignments)
 
     # Write distance matrix
     with open(full_output_path + "/distance_matrix.txt", 'w') as fh:
-        print >> fh, "\t" +  "\t".join(ordered_compound_names)
+        print("\t" +  "\t".join(ordered_compound_names), file=fh)
         cnt = 0
         for row in distance_matrix:
-            print >> fh, ordered_compound_names[cnt] + "\t" + "\t".join(map(str, row))
+            print(ordered_compound_names[cnt] + "\t" + "\t".join(map(str, row)), file=fh)
             cnt += 1
 
     # Write result table
     with open(full_output_path + "/results_table.txt", 'w') as fh:
-        print >> fh, "Compound1_ID\tCompound2_ID\tCompound1_Name\tCompound2_Name\tTanimoto\tSeq\tBindsToBoth"
+        print("Compound1_ID\tCompound2_ID\tCompound1_Name\tCompound2_Name\tTanimoto\tSeq\tBindsToBoth", file=fh)
         for line in result_table_strs:
-            print >> fh, line
+            print(line, file=fh)
 
     # If database provided, collect top N matching compounds for each input compound and write to disk
     if arguments.database:
-        print arguments.database
+        print(arguments.database)
         subprocess.call("mkdir %s/top_compounds" % full_output_path, shell = True)
-        for compound_name, compound_fn in compound_filenames.items():
-            subprocess.call('babel %s %s/top_compounds/%s_top100_compounds.sdf -s %s -at100 -xfMACCS' % (arguments.database, full_output_path, compound_name, compound_fn), shell = True)
-            distances_out_str = subprocess.Popen('babel %s %s/top_compounds/%s_top100_compounds.sdf -ofpt -xfMACCS' % 
+        for compound_name, compound_fn in list(compound_filenames.items()):
+            # subprocess.call('babel %s %s/top_compounds/%s_top100_compounds.sdf -s %s -at100 -xfMACCS' % (arguments.database, full_output_path, compound_name, compound_fn), shell = True)
+            subprocess.call('obabel -i sdf %s %s/top_compounds/%s_top100_compounds.sdf -s %s -at100 -xfMACCS' % (arguments.database, full_output_path, compound_name, compound_fn), shell = True)
+            # distances_out_str = subprocess.Popen('babel %s %s/top_compounds/%s_top100_compounds.sdf -ofpt -xfMACCS' % 
+                # (compound_fn, full_output_path, compound_name), shell = True, stdout=subprocess.PIPE)
+            distances_out_str = subprocess.Popen('obabel -i sdf %s %s/top_compounds/%s_top100_compounds.sdf -ofpt -xfMACCS' % 
                 (compound_fn, full_output_path, compound_name), shell = True, stdout=subprocess.PIPE)
             lines = [line for line in distances_out_str.stdout.read().split("\n")]
             processed_distance_strs = []
@@ -155,12 +161,12 @@ def _process_arguments(arguments):
                 processed_distance_strs.append("\t".join([target_name, reference_name, tanimoto]))
             with open("%s/top_compounds/%s_top100_distances.txt" % (full_output_path, compound_name), 'w') as fh:
                 for line in processed_distance_strs:
-                    print >> fh, line
+                    print(line, file=fh)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="")
 
-    parser.add_argument('-c', '--compounds', help='Compound directory', required=True)
+    parser.add_argument('-c', '--compounds', help='Compound directory, SDF format', required=True)
     parser.add_argument('-a', '--assignment', help="Sequence assignments. Tab-delimited file, one column for sequence name and another for the compound that binds to it. Assumes column header (Compound, Sequence)", required=True)
     parser.add_argument('-o', '--output', help='Output directory', required=True)
     parser.add_argument('-d', '--database', help="ChemBL database in which to search against", required=False)
@@ -172,7 +178,7 @@ if __name__ == "__main__":
     chembl_database = "/Users/julianzaugg/Documents/University/Phd/Projects/Evolutionary_Pathway/Data/ChEMBL/chembl_21.fs"
     my_args = ["-c", compound_dir, "-a", assignment_file, "-o", output_dir, '-d', chembl_database, '-n', "100"]
     # Compound  Sequence
-    args = parser.parse_args(my_args)
+    args = parser.parse_args()
 
 
     _process_arguments(args)
